@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+venv/
+env/
+ENV/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+data/state.json

@@ -10,7 +10,7 @@ Each dataclass defines the exact shape of data as it moves through the pipeline:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -80,4 +80,4 @@ class Alert:
     body: str
     urgency: str             # "CRITICAL" | "HIGH" | "NORMAL"
     skus: list[str] = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))

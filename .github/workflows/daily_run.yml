@@ -1,0 +1,52 @@
+name: Daily Inventory Check
+
+on:
+  schedule:
+    # Runs at 08:00 UTC every day (13:00 Pakistan time)
+    - cron: '0 8 * * *'
+  workflow_dispatch: {}   # allows manual trigger from GitHub UI
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore previous state
+        uses: actions/download-artifact@v4
+        with:
+          name: agent-state
+          path: data/
+        continue-on-error: true   # first run has no artifact yet
+
+      - name: Run pipeline
+        env:
+          SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python -m agent.main --source shopify
+
+      - name: Save state as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-state
+          path: data/state.json
+          if-no-files-found: ignore

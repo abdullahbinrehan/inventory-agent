@@ -8,11 +8,13 @@ Usage:
 
 import argparse
 import logging
+import time
+from datetime import datetime, timezone
 
 from agent import config
 from agent.analysis import filter_alertable, normalize_all
 from agent.composition import compose_critical_alert, compose_daily_digest
-from agent.discord_webhook import send_log
+from agent.discord_webhook import send_log_embed
 from agent.error_handler import send_error_alert
 from agent.ingestion import get_inventory, get_orders
 from agent.notification import send_rich_alert
@@ -27,6 +29,7 @@ logger = logging.getLogger("agent.main")
 
 def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = False) -> dict:
     """Run the entire pipeline. Returns a summary dict."""
+    started_at = time.time()
     logger.info("Starting pipeline | source=%s dry_run=%s force=%s", source, dry_run, force)
 
     # 1. Load state
@@ -97,14 +100,17 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
         save_state(state)
         logger.info("State saved to %s", config.STATE_FILE)
 
-    # 9. Log summary to Discord #logs
-    logger.info("Pipeline done | %s", summary)
+    # 9. Send structured log embed to Discord #logs
+    duration = time.time() - started_at
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    logger.info("Pipeline done in %.1fs | %s", duration, summary)
 
-    send_log(
-        f"✅ Run complete · "
-        f"{summary['critical']} critical · "
-        f"{summary['digest']} digest · "
-        f"{summary['skipped']} skipped"
+    send_log_embed(
+        source=source,
+        duration_sec=duration,
+        summary=summary,
+        timestamp=ts,
+        dry_run=dry_run,
     )
 
     return summary

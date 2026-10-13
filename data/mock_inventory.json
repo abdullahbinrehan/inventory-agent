@@ -4,69 +4,69 @@
     "product_name": "Black T-Shirt (Medium)",
     "current_stock": 8,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821150Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   },
   {
     "sku": "TSHIRT-WHT-L",
     "product_name": "White T-Shirt (Large)",
     "current_stock": 5,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821211Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   },
   {
     "sku": "MUG-CERAMIC",
     "product_name": "Ceramic Mug",
     "current_stock": 20,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821238Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   },
   {
     "sku": "HOODIE-GRY-XL",
     "product_name": "Grey Hoodie (XL)",
     "current_stock": 15,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821253Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   },
   {
     "sku": "CAP-BLK-OS",
     "product_name": "Black Cap (One Size)",
     "current_stock": 30,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821264Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   },
   {
     "sku": "SOCKS-WHT-3PK",
     "product_name": "White Socks (3-Pack)",
     "current_stock": 40,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821276Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   },
   {
     "sku": "STICKER-PACK",
     "product_name": "Sticker Pack",
     "current_stock": 500,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821283Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   },
   {
     "sku": "POSTER-A2",
     "product_name": "A2 Poster",
     "current_stock": 100,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821290Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   },
   {
     "sku": "VINTAGE-2019-TEE",
     "product_name": "Vintage 2019 Tee",
     "current_stock": 50,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821297Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   },
   {
     "sku": "LIMITED-HAT",
     "product_name": "Limited Edition Hat",
     "current_stock": 0,
     "location_id": "gid://shopify/Location/1",
-    "updated_at": "2026-10-12T17:47:19.821304Z"
+    "updated_at": "2026-10-13T17:31:14.706917Z"
   }
 ]

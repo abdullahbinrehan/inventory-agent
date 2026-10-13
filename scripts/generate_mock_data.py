@@ -41,6 +41,8 @@ PRICE = {
 
 random.seed(42)  # Reproducible output
 
+now_utc = datetime.now(timezone.utc)
+
 # --- Build inventory JSON ---
 inventory = []
 for sku, name, stock, _ in SKUS:
@@ -49,19 +51,18 @@ for sku, name, stock, _ in SKUS:
         "product_name": name,
         "current_stock": stock,
         "location_id": "gid://shopify/Location/1",
-        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "updated_at": now_utc.isoformat().replace("+00:00", "Z"),
     })
 
 with open(DATA_DIR / "mock_inventory.json", "w") as f:
     json.dump(inventory, f, indent=2)
 
 # --- Build orders JSON (last 30 days) ---
-now = datetime.utcnow()
 orders = []
 order_id = 1000
 
 for day_offset in range(30):
-    day = now - timedelta(days=day_offset)
+    day = now_utc - timedelta(days=day_offset)
     for sku, _, _, avg in SKUS:
         if avg <= 0:
             continue
@@ -74,7 +75,7 @@ for day_offset in range(30):
             "created_at": day.replace(
                 hour=random.randint(8, 20),
                 minute=random.randint(0, 59),
-            ).isoformat() + "Z",
+            ).isoformat().replace("+00:00", "Z"),
             "line_items": [
                 {
                     "sku": sku,

@@ -54,6 +54,7 @@ OWNER_EMAIL = os.getenv("OWNER_EMAIL", "")
 
 # Chat
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+DISCORD_WEBHOOK_URL_LOGS = os.getenv("DISCORD_WEBHOOK_URL_LOGS", "")
 
 
 # ---------------------------------------------------------------------------
@@ -62,4 +63,5 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 NOTIFY_CHANNELS = {
     "email": bool(GMAIL_USER and GMAIL_APP_PASSWORD and OWNER_EMAIL),
     "discord": bool(DISCORD_WEBHOOK_URL),
+    "discord_logs": bool(DISCORD_WEBHOOK_URL_LOGS),
 }

@@ -12,8 +12,9 @@ import logging
 from agent import config
 from agent.analysis import filter_alertable, normalize_all
 from agent.composition import compose_critical_alert, compose_daily_digest
+from agent.discord_webhook import send_log
 from agent.ingestion import get_inventory, get_orders
-from agent.notification import send_alert
+from agent.notification import send_rich_alert
 from agent.state import load_state, record_alert, save_state, should_alert
 
 logging.basicConfig(
@@ -57,8 +58,16 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
     # 6. Compose + send critical
     if critical:
         body = compose_critical_alert(critical)
-        title = f"🚨 CRITICAL: {len(critical)} SKU(s) need restocking"
-        send_alert(title, body, dry_run=dry_run)
+        title = f"🚨 CRITICAL · {len(critical)} SKU(s) need restocking"
+        send_rich_alert(
+            title=title,
+            subtitle="Immediate action required",
+            intro=f"{len(critical)} SKU(s) are critically low and need restocking now.",
+            skus=critical,
+            urgency="CRITICAL",
+            narrative=body,
+            dry_run=dry_run,
+        )
         if not dry_run:
             for s in critical:
                 record_alert(s.sku, s.urgency, state)
@@ -67,8 +76,16 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
     # 7. Compose + send digest
     if digest_items:
         body = compose_daily_digest(digest_items)
-        title = f"📦 Daily digest: {len(digest_items)} SKU(s) to watch"
-        send_alert(title, body, dry_run=dry_run)
+        title = f"📦 Daily Digest · {len(digest_items)} SKU(s) to watch"
+        send_rich_alert(
+            title=title,
+            subtitle="No action needed immediately",
+            intro=f"{len(digest_items)} SKU(s) are trending low — keep an eye on them.",
+            skus=digest_items,
+            urgency="NORMAL",
+            narrative=body,
+            dry_run=dry_run,
+        )
         if not dry_run:
             for s in digest_items:
                 record_alert(s.sku, s.urgency, state)
@@ -79,7 +96,16 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
         save_state(state)
         logger.info("State saved to %s", config.STATE_FILE)
 
+    # 9. Log summary to Discord #logs
     logger.info("Pipeline done | %s", summary)
+
+    send_log(
+        f"✅ Run complete · "
+        f"{summary['critical']} critical · "
+        f"{summary['digest']} digest · "
+        f"{summary['skipped']} skipped"
+    )
+
     return summary
 
 

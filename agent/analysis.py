@@ -5,7 +5,7 @@ Takes raw inventory + order lines and produces NormalizedSKU objects with
 computed metrics and an urgency tier. Pure Python, no LLM.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from math import inf
 
@@ -17,15 +17,39 @@ from agent.models import RawInventoryItem, RawOrderLine, NormalizedSKU
 # Core calculations
 # ---------------------------------------------------------------------------
 
+def _parse_iso(ts: str) -> datetime:
+    """Parse an ISO timestamp into an aware datetime (UTC if naive)."""
+    if ts.endswith("Z"):
+        ts = ts[:-1] + "+00:00"
+    dt = datetime.fromisoformat(ts)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
 def compute_avg_daily_sales(
     orders: list[RawOrderLine],
     sku: str,
     window_days: int = config.SALES_WINDOW_DAYS,
 ) -> float:
-    """Sum quantities sold for a SKU over the window, divided by window_days."""
+    """
+    Sum quantities sold for a SKU within the last `window_days`,
+    then divide by window_days.
+    """
     if window_days <= 0:
         return 0.0
-    total_qty = sum(o.quantity for o in orders if o.sku == sku)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+    total_qty = 0
+    for o in orders:
+        if o.sku != sku:
+            continue
+        try:
+            order_dt = _parse_iso(o.created_at)
+        except (ValueError, TypeError):
+            continue
+        if order_dt < cutoff:
+            continue
+        total_qty += o.quantity
     return total_qty / window_days
 
 

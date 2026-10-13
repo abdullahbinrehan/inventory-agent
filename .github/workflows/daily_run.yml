@@ -31,8 +31,7 @@ jobs:
           path: data/
         continue-on-error: true   # first run has no artifact yet
 
-      
-      - name: Debug — check secrets are set
+      - name: Run pipeline
         env:
           SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
           SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
@@ -52,3 +51,12 @@ jobs:
           name: agent-state
           path: data/state.json
           if-no-files-found: ignore
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL_LOGS: ${{ secrets.DISCORD_WEBHOOK_URL_LOGS }}
+        run: |
+          curl -X POST "$DISCORD_WEBHOOK_URL_LOGS" \
+            -H "Content-Type: application/json" \
+            -d "{\"content\":\"❌ Workflow run failed. Check logs: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}"

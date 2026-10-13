@@ -13,6 +13,7 @@ from agent import config
 from agent.analysis import filter_alertable, normalize_all
 from agent.composition import compose_critical_alert, compose_daily_digest
 from agent.discord_webhook import send_log
+from agent.error_handler import send_error_alert
 from agent.ingestion import get_inventory, get_orders
 from agent.notification import send_rich_alert
 from agent.state import load_state, record_alert, save_state, should_alert
@@ -109,6 +110,19 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
     return summary
 
 
+def run_pipeline_safe(source: str = "mock", dry_run: bool = False, force: bool = False) -> dict | None:
+    """
+    Wrapper around run_pipeline() that catches exceptions, sends an error
+    alert, and re-raises so the process still exits with a non-zero code.
+    """
+    try:
+        return run_pipeline(source=source, dry_run=dry_run, force=force)
+    except Exception as e:
+        logger.exception("Pipeline crashed")
+        send_error_alert(e)
+        raise
+
+
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Inventory agent pipeline")
     p.add_argument("--source", choices=["mock", "shopify"], default="mock")
@@ -121,4 +135,4 @@ def _parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = _parse_args()
-    run_pipeline(source=args.source, dry_run=args.dry_run, force=args.force)
+    run_pipeline_safe(source=args.source, dry_run=args.dry_run, force=args.force)

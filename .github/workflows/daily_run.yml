@@ -31,7 +31,8 @@ jobs:
           path: data/
         continue-on-error: true   # first run has no artifact yet
 
-      - name: Run pipeline
+      
+      - name: Debug — check secrets are set
         env:
           SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
           SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}

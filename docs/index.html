@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inventory Agent Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --accent: #3b82f6;
+    --critical: #ef4444;
+    --high: #f59e0b;
+    --normal: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  header { margin-bottom: 32px; }
+  header h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .stat {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .stat-label { color: var(--muted); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .stat-value { font-size: 28px; font-weight: 700; margin-top: 6px; }
+  .stat-value.critical { color: var(--critical); }
+  .stat-value.high { color: var(--high); }
+  .stat-value.normal { color: var(--normal); }
+  .chart-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .chart-card h2 { margin: 0 0 16px; font-size: 15px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; text-transform: uppercase; }
+  .chart-wrap { position: relative; height: 280px; }
+  .empty { text-align: center; color: var(--muted); padding: 48px 24px; }
+  .footer { margin-top: 40px; text-align: center; color: var(--muted); font-size: 12px; }
+  .footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>📦 Inventory Agent Dashboard</h1>
+    <p>Auto-generated from <code>data/run_history.csv</code></p>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="chart-card">
+    <h2>Alert Counts Over Time</h2>
+    <div class="chart-wrap"><canvas id="chartCounts"></canvas></div>
+  </div>
+
+  <div class="chart-card">
+    <h2>SKUs Tracked</h2>
+    <div class="chart-wrap"><canvas id="chartSkus"></canvas></div>
+  </div>
+
+  <div class="chart-card">
+    <h2>Pipeline Duration (seconds)</h2>
+    <div class="chart-wrap"><canvas id="chartDuration"></canvas></div>
+  </div>
+
+  <div class="footer">
+    Data source: <a href="../data/run_history.csv">run_history.csv</a>
+  </div>
+</div>
+
+<script>
+const CSV_URL = '../data/run_history.csv';
+
+async function loadData() {
+  const res = await fetch(CSV_URL + '?t=' + Date.now());
+  const text = await res.text();
+  const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
+  return parsed.data;
+}
+
+function renderStats(rows) {
+  const last = rows[rows.length - 1] || {};
+  const el = document.getElementById('stats');
+  const cards = [
+    { label: 'Total Runs', value: rows.length },
+    { label: 'SKUs Tracked', value: last.total_skus ?? '—' },
+    { label: 'Alertable', value: last.alertable ?? '—' },
+    { label: 'Critical', value: last.critical ?? '—', cls: 'critical' },
+    { label: 'Digest', value: last.digest ?? '—', cls: 'normal' },
+    { label: 'Duration', value: last.duration_sec ? last.duration_sec + 's' : '—' },
+  ];
+  el.innerHTML = cards.map(c => `
+    <div class="stat">
+      <div class="stat-label">${c.label}</div>
+      <div class="stat-value ${c.cls || ''}">${c.value}</div>
+    </div>
+  `).join('');
+}
+
+function renderCharts(rows) {
+  const labels = rows.map(r => r.date);
+
+  const baseOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#94a3b8' } } },
+    scales: {
+      x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+    }
+  };
+
+  new Chart(document.getElementById('chartCounts'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Critical', data: rows.map(r => +r.critical), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)', tension: 0.3, fill: true },
+        { label: 'Digest', data: rows.map(r => +r.digest), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)', tension: 0.3, fill: true },
+      ]
+    },
+    options: baseOpts
+  });
+
+  new Chart(document.getElementById('chartSkus'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Total SKUs', data: rows.map(r => +r.total_skus), backgroundColor: 'rgba(148,163,184,0.4)' },
+        { label: 'Alertable', data: rows.map(r => +r.alertable), backgroundColor: '#3b82f6' },
+      ]
+    },
+    options: baseOpts
+  });
+
+  new Chart(document.getElementById('chartDuration'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Duration (s)', data: rows.map(r => +r.duration_sec), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', tension: 0.3, fill: true }
+      ]
+    },
+    options: baseOpts
+  });
+}
+
+(async () => {
+  try {
+    const rows = await loadData();
+    if (!rows.length) {
+      document.querySelector('.container').innerHTML += '<div class="empty">No run history yet. Trigger the workflow once to populate.</div>';
+      return;
+    }
+    renderStats(rows);
+    renderCharts(rows);
+  } catch (e) {
+    document.querySelector('.container').innerHTML += '<div class="empty">Failed to load data: ' + e.message + '</div>';
+  }
+})();
+</script>
+</body>
+</html>

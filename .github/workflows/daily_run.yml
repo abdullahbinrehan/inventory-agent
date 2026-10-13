@@ -2,9 +2,11 @@ name: Daily Inventory Check
 
 on:
   schedule:
-    # Runs at 08:00 UTC every day (13:00 Pakistan time)
     - cron: '0 8 * * *'
-  workflow_dispatch: {}   # allows manual trigger from GitHub UI
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
 
 jobs:
   run-agent:
@@ -29,7 +31,7 @@ jobs:
         with:
           name: agent-state
           path: data/
-        continue-on-error: true   # first run has no artifact yet
+        continue-on-error: true
 
       - name: Run pipeline
         env:
@@ -43,6 +45,18 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_WEBHOOK_URL_LOGS: ${{ secrets.DISCORD_WEBHOOK_URL_LOGS }}
         run: python -m agent.main --source mock --force
+
+      - name: Commit run history
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/run_history.csv
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update run history [skip ci]"
+            git push
+          fi
 
       - name: Save state as artifact
         if: always()

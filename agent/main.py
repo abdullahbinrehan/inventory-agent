@@ -16,6 +16,7 @@ from agent.analysis import filter_alertable, normalize_all
 from agent.composition import compose_critical_alert, compose_daily_digest
 from agent.discord_webhook import send_log_embed
 from agent.error_handler import send_error_alert
+from agent.history import append_run
 from agent.ingestion import get_inventory, get_orders
 from agent.notification import send_rich_alert
 from agent.state import load_state, record_alert, save_state, should_alert
@@ -100,9 +101,20 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
         save_state(state)
         logger.info("State saved to %s", config.STATE_FILE)
 
-    # 9. Send structured log embed to Discord #logs
+    # 9. Append a row to run history CSV
     duration = time.time() - started_at
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    append_run(
+        source=source,
+        total_skus=len(normalized),
+        alertable=len(alertable),
+        summary=summary,
+        duration_sec=duration,
+        dry_run=dry_run,
+    )
+
+    # 10. Send structured log embed to Discord #logs
     logger.info("Pipeline done in %.1fs | %s", duration, summary)
 
     send_log_embed(

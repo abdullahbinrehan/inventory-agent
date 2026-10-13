@@ -103,3 +103,43 @@ def test_vintage_tee_is_healthy():
     tee = next(s for s in skus if s.sku == "VINTAGE-2019-TEE")
     assert tee.urgency == "HEALTHY"
     assert tee.days_of_supply == inf
+
+
+def test_compute_sales_trend_pct_growing():
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+
+    def days_ago(d):
+        return (now - timedelta(days=d)).isoformat().replace("+00:00", "Z")
+
+    # This week: 10 units, last week: 5 units -> +100%
+    orders = [
+        RawOrderLine("1", days_ago(2), "SKU-A", 10, 1.0),
+        RawOrderLine("2", days_ago(9), "SKU-A", 5, 1.0),
+    ]
+    from agent.analysis import compute_sales_trend_pct
+    trend = compute_sales_trend_pct(orders, "SKU-A", window_days=7)
+    assert trend == 1.0
+
+
+def test_compute_sales_trend_pct_no_baseline():
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    orders = [
+        RawOrderLine("1", (now - timedelta(days=1)).isoformat().replace("+00:00", "Z"), "SKU-A", 10, 1.0),
+    ]
+    from agent.analysis import compute_sales_trend_pct
+    assert compute_sales_trend_pct(orders, "SKU-A", window_days=7) == 0.0
+
+
+def test_compute_spike_ratio_no_spike():
+    from agent.analysis import compute_spike_ratio
+    assert compute_spike_ratio([], "SKU-A", avg_daily_sales=2.0) == 1.0
+
+
+def test_normalize_all_populates_trend_and_spike():
+    skus = normalize_all(get_inventory("mock"), get_orders("mock"))
+    for s in skus:
+        assert isinstance(s.sales_trend_pct, float)
+        assert isinstance(s.spike_ratio, float)
+        assert s.spike_ratio >= 0.0

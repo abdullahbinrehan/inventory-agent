@@ -2,7 +2,7 @@
 Composition layer.
 
 Turns structured SKU data into a human-readable alert message using an LLM.
-Fallback chain: Groq -> OpenRouter -> plain template.
+Fallback chain: Groq -> plain template.
 """
 
 import logging
@@ -16,44 +16,70 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Prompt builders
+# Prompt helpers
 # ---------------------------------------------------------------------------
 
 def _format_skus_for_prompt(skus: list[NormalizedSKU]) -> str:
     lines = []
     for s in skus:
+        # Human-readable trend description
+        if s.sales_trend_pct > 0.15:
+            trend = f"growing (+{int(s.sales_trend_pct * 100)}% WoW)"
+        elif s.sales_trend_pct < -0.15:
+            trend = f"declining ({int(s.sales_trend_pct * 100)}% WoW)"
+        else:
+            trend = "steady"
+
+        # Human-readable spike description
+        if s.spike_ratio >= 2.0:
+            spike = f"spiking TODAY ({s.spike_ratio}x normal)"
+        else:
+            spike = "no spike"
+
         lines.append(
-            f"- {s.product_name} (SKU: {s.sku}) | "
-            f"stock: {s.current_stock} | "
+            f"- {s.product_name} (SKU: {s.sku})\n"
+            f"    stock: {s.current_stock} | "
             f"avg daily sales: {s.avg_daily_sales} | "
             f"days of supply: {s.days_of_supply} | "
-            f"suggested reorder: {s.suggested_reorder_qty} units | "
-            f"urgency: {s.urgency}"
+            f"reorder: {s.suggested_reorder_qty} units\n"
+            f"    urgency: {s.urgency} | trend: {trend} | {spike}"
         )
     return "\n".join(lines)
 
 
 def _build_prompt(skus: list[NormalizedSKU], digest: bool = False) -> str:
-    header = (
-        "You are an inventory assistant writing to a busy store owner. "
-        "Write a concise, clear email."
+    tone = (
+        "URGENT — the owner needs to act today."
+        if not digest
+        else "Informational — the owner should keep these on their radar."
     )
-    if digest:
-        header += " This is a daily digest — group items by urgency, keep it scannable."
-    else:
-        header += " This is an URGENT alert — lead with the most critical item."
 
-    body = (
-        f"\n\nInventory status:\n{_format_skus_for_prompt(skus)}\n\n"
-        "Requirements:\n"
-        "- Use short paragraphs or bullet points.\n"
-        "- For each item include: product name, current stock, days of supply, "
-        "and suggested reorder quantity.\n"
-        "- Do NOT invent data. Use only what is provided.\n"
-        "- Do NOT add a subject line — just the body.\n"
-        "- Keep it under 250 words."
-    )
-    return header + body
+    return f"""You are an inventory analyst writing to a busy store owner.
+
+Situation: {tone}
+
+Current inventory snapshot:
+{_format_skus_for_prompt(skus)}
+
+Write a concise email body that:
+
+1. OPENS with a one-sentence summary of the overall situation
+   (e.g. "3 shirts are critically low and 2 accessories are trending down.")
+
+2. For each SKU, briefly explains WHY it is low, drawing on the trend and spike
+   data. Do NOT just restate the numbers — interpret them.
+   Example: "Black T-Shirt is the most urgent — sales spiked 3x today and you
+   have under 3 days of cover."
+
+3. Ends with a short recommended action.
+
+Constraints:
+- Do NOT invent data. Only use what's provided.
+- Do NOT include a subject line — just the body.
+- Keep it under 220 words.
+- Use short paragraphs or bullet points.
+- Be direct and actionable.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +92,7 @@ def _call_groq(prompt: str) -> str:
         model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
-        max_tokens=600,
+        max_tokens=700,
     )
     return response.choices[0].message.content.strip()
 
@@ -75,11 +101,19 @@ def _fallback_template(skus: list[NormalizedSKU]) -> str:
     """Plain-text fallback if the LLM is unavailable."""
     lines = ["Inventory alert:\n"]
     for s in skus:
+        reason_bits = []
+        if s.sales_trend_pct > 0.15:
+            reason_bits.append(f"sales up {int(s.sales_trend_pct * 100)}% WoW")
+        elif s.sales_trend_pct < -0.15:
+            reason_bits.append(f"sales down {int(abs(s.sales_trend_pct) * 100)}% WoW")
+        if s.spike_ratio >= 2.0:
+            reason_bits.append(f"spiking {s.spike_ratio}x today")
+        reason = f" ({', '.join(reason_bits)})" if reason_bits else ""
+
         lines.append(
-            f"- {s.product_name} ({s.sku}): {s.current_stock} in stock, "
-            f"{s.days_of_supply} days of supply. "
-            f"Suggested reorder: {s.suggested_reorder_qty} units. "
-            f"[{s.urgency}]"
+            f"- {s.product_name} ({s.sku}): "
+            f"{s.current_stock} in stock, {s.days_of_supply} days of supply. "
+            f"Reorder {s.suggested_reorder_qty} units. [{s.urgency}]{reason}"
         )
     return "\n".join(lines)
 

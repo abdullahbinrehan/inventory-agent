@@ -41,7 +41,8 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python -m agent.main --source shopify
+          DISCORD_WEBHOOK_URL_LOGS: ${{ secrets.DISCORD_WEBHOOK_URL_LOGS }}
+        run: python -m agent.main --source mock --force
 
       - name: Save state as artifact
         if: always()

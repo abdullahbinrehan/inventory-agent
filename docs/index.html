@@ -63,7 +63,7 @@
 <div class="container">
   <header>
     <h1>📦 Inventory Agent Dashboard</h1>
-    <p>Auto-generated from <code>data/run_history.csv</code></p>
+    <p>Auto-generated from <code>docs/run_history.csv</code></p>
   </header>
 
   <div class="stats" id="stats"></div>
@@ -84,18 +84,22 @@
   </div>
 
   <div class="footer">
-    Data source: <a href="../data/run_history.csv">run_history.csv</a>
+    Data source: <a href="run_history.csv">run_history.csv</a>
   </div>
 </div>
 
 <script>
-const CSV_URL = '../data/run_history.csv';
+const CSV_URL = 'run_history.csv';
 
 async function loadData() {
   const res = await fetch(CSV_URL + '?t=' + Date.now());
+  if (!res.ok) throw new Error('Failed to fetch CSV: ' + res.status);
   const text = await res.text();
+  // Guard: if the response isn't CSV (e.g. an HTML 404 page), bail out.
+  if (text.trim().startsWith('<')) throw new Error('CSV not found (got HTML)');
   const parsed = Papa.parse(text.trim(), { header: true, skipEmptyLines: true });
-  return parsed.data;
+  // Only keep rows that actually have our expected columns populated.
+  return parsed.data.filter(r => r.date && r.total_skus !== undefined && r.total_skus !== '');
 }
 
 function renderStats(rows) {

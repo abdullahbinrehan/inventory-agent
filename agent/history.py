@@ -1,20 +1,20 @@
 """
 Run history CSV writer.
 
-Appends one row per pipeline run to data/run_history.csv.
-The file is committed back to the repo by GitHub Actions.
+Appends one row per pipeline run to docs/run_history.csv.
+The file is committed back to the repo by GitHub Actions and served
+by GitHub Pages as part of the dashboard.
 """
 
 import csv
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 
 from agent import config
 
 logger = logging.getLogger(__name__)
 
-HISTORY_FILE = config.DATA_DIR / "run_history.csv"
+HISTORY_FILE = config.PROJECT_ROOT / "docs" / "run_history.csv"
 
 HEADERS = [
     "date",
@@ -36,7 +36,7 @@ def append_run(
     dry_run: bool = False,
 ) -> bool:
     """
-    Append one row to run_history.csv. Never raises.
+    Append one row to docs/run_history.csv. Never raises.
 
     Creates the file with headers if it doesn't exist.
     """

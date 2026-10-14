@@ -2,3 +2,4 @@ date,source,total_skus,alertable,critical,digest,duration_sec
 2026-10-13 19:17 UTC,mock,10,6,3,3,19.25
 2026-10-13 19:23 UTC,mock,10,6,3,3,7.59
 2026-10-13 19:37 UTC,mock,10,6,3,3,9.41
+2026-10-14 13:11 UTC,mock,10,6,3,3,11.02

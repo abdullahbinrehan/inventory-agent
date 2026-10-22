@@ -1,6 +1,5 @@
 """
 Error handling utilities.
-
 Sends error notifications to Discord #logs and email when the pipeline crashes.
 """
 
@@ -9,22 +8,21 @@ import platform
 import traceback
 from datetime import datetime, timezone
 
-from agent import config
-from agent.discord_webhook import send_log
+from agent.discord_webhook import send_log_message
 from agent.emailer import send_email
 
 logger = logging.getLogger(__name__)
 
-
-def send_error_alert(exception: BaseException) -> None:
+def send_error_alert(exception: BaseException, user_config: dict = None) -> None:
     """
     Send a formatted error report to Discord #logs and email.
     Never raises — if notification itself fails, we log and move on.
     """
+    if not user_config:
+        user_config = {}
+
     tb = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-    # Truncate to avoid Discord/email size limits
     tb_short = tb[-3500:] if len(tb) > 3500 else tb
 
     # --- Discord ---
@@ -37,7 +35,7 @@ def send_error_alert(exception: BaseException) -> None:
         f"```\n{tb_short}\n```"
     )
     try:
-        send_log(discord_msg)
+        send_log_message(discord_msg, user_config)
     except Exception as e:
         logger.error("Failed to send error alert to Discord: %s", e)
 
@@ -71,6 +69,7 @@ def send_error_alert(exception: BaseException) -> None:
             subject=f"❌ inventory-agent crashed: {type(exception).__name__}",
             plain_body=plain,
             html_body=html,
+            user_config=user_config
         )
     except Exception as e:
         logger.error("Failed to send error alert via email: %s", e)

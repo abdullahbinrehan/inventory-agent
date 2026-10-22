@@ -1,9 +1,7 @@
 """
 Ingestion layer.
-
 Reads raw data from a source (mock files or Shopify) and returns
-RawInventoryItem and RawOrderLine objects. Everything downstream talks to
-this layer, never to files or APIs directly.
+RawInventoryItem and RawOrderLine objects.
 """
 
 import json
@@ -16,71 +14,31 @@ import requests
 from agent import config
 from agent.models import RawInventoryItem, RawOrderLine
 
-
-# ===========================================================================
-# Mock data loaders
-# ===========================================================================
-
-def load_mock_inventory() -> list[RawInventoryItem]:
-    """Read data/mock_inventory.json and return RawInventoryItem objects."""
-    with open(config.MOCK_INVENTORY_FILE, "r") as f:
-        raw = json.load(f)
-
-    items = []
-    for row in raw:
-        items.append(
-            RawInventoryItem(
-                sku=row["sku"],
-                product_name=row["product_name"],
-                current_stock=row["current_stock"],
-                location_id=row.get("location_id"),
-                updated_at=row.get("updated_at"),
-            )
-        )
-    return items
-
-
-def load_mock_orders() -> list[RawOrderLine]:
-    """
-    Read data/mock_orders.json and flatten each order's line_items into
-    individual RawOrderLine objects.
-    """
-    with open(config.MOCK_ORDERS_FILE, "r") as f:
-        raw = json.load(f)
-
-    lines = []
-    for order in raw:
-        for item in order["line_items"]:
-            lines.append(
-                RawOrderLine(
-                    order_id=order["order_id"],
-                    created_at=order["created_at"],
-                    sku=item["sku"],
-                    quantity=item["quantity"],
-                    price=item.get("price", 0.0),
-                )
-            )
-    return lines
-
-
-# ===========================================================================
-# Shopify client credentials auth
-# ===========================================================================
-
 API_VERSION = "2026-10"
-
 _ACCESS_TOKEN: str | None = None
 
 
-def _get_shopify_access_token() -> str:
-    """
-    Exchange Client ID + Client Secret for a temporary access token.
-    Token lasts ~24 hours. Called once per pipeline run.
-    """
-    url = f"https://{config.SHOPIFY_STORE_URL}/admin/oauth/access_token"
+def load_mock_inventory() -> list[RawInventoryItem]:
+    with open(config.MOCK_INVENTORY_FILE, "r") as f:
+        raw = json.load(f)
+    return [RawInventoryItem(sku=r["sku"], product_name=r["product_name"], current_stock=r["current_stock"], location_id=r.get("location_id"), updated_at=r.get("updated_at")) for r in raw]
+
+
+def load_mock_orders() -> list[RawOrderLine]:
+    with open(config.MOCK_ORDERS_FILE, "r") as f:
+        raw = json.load(f)
+    lines = []
+    for order in raw:
+        for item in order["line_items"]:
+            lines.append(RawOrderLine(order_id=order["order_id"], created_at=order["created_at"], sku=item["sku"], quantity=item["quantity"], price=item.get("price", 0.0)))
+    return lines
+
+
+def _get_shopify_access_token(user_config: dict) -> str:
+    url = f"https://{user_config['shopify_url']}/admin/oauth/access_token"
     payload = {
-        "client_id": config.SHOPIFY_CLIENT_ID,
-        "client_secret": config.SHOPIFY_CLIENT_SECRET,
+        "client_id": user_config['shopify_client_id'],
+        "client_secret": user_config['shopify_client_secret'],
         "grant_type": "client_credentials",
     }
     resp = requests.post(url, json=payload, timeout=30)
@@ -88,203 +46,80 @@ def _get_shopify_access_token() -> str:
     return resp.json()["access_token"]
 
 
-def _shopify_get(path: str, params: dict | None = None) -> requests.Response:
-    """
-    Make an authenticated GET request to the Shopify Admin API.
-    Retries once after Retry-After seconds if rate-limited (HTTP 429).
-    """
+def _shopify_get(path: str, user_config: dict, params: dict | None = None) -> requests.Response:
     global _ACCESS_TOKEN
     if _ACCESS_TOKEN is None:
-        _ACCESS_TOKEN = _get_shopify_access_token()
+        _ACCESS_TOKEN = _get_shopify_access_token(user_config)
 
-    url = f"https://{config.SHOPIFY_STORE_URL}/admin/api/{API_VERSION}/{path}"
-    headers = {
-        "X-Shopify-Access-Token": _ACCESS_TOKEN,
-        "Content-Type": "application/json",
-    }
-
+    url = f"https://{user_config['shopify_url']}/admin/api/{API_VERSION}/{path}"
+    headers = {"X-Shopify-Access-Token": _ACCESS_TOKEN, "Content-Type": "application/json"}
     resp = requests.get(url, headers=headers, params=params, timeout=30)
 
     if resp.status_code == 429:
-        retry_after = int(resp.headers.get("Retry-After", 2))
-        time.sleep(retry_after)
+        time.sleep(int(resp.headers.get("Retry-After", 2)))
         resp = requests.get(url, headers=headers, params=params, timeout=30)
 
     resp.raise_for_status()
     return resp
 
 
-def _paginate_shopify(path: str, key: str, params: dict | None = None) -> list[dict]:
-    """
-    Follow Shopify's Link header pagination and collect all items.
-    `key` is the JSON key holding the list (e.g. "orders").
-    """
-    results: list[dict] = []
-    current_params = dict(params or {})
-
+def _paginate_shopify(path: str, key: str, user_config: dict, params: dict | None = None) -> list[dict]:
+    results, current_params = [], dict(params or {})
     while True:
-        resp = _shopify_get(path, current_params)
-        data = resp.json()
-        results.extend(data.get(key, []))
-
+        resp = _shopify_get(path, user_config, current_params)
+        results.extend(resp.json().get(key, []))
         link_header = resp.headers.get("Link", "")
-        next_url = None
-        for part in link_header.split(","):
-            if 'rel="next"' in part:
-                next_url = part.split(";")[0].strip().strip("<>")
-                break
-
-        if not next_url:
-            break
-
-        parsed = urlparse(next_url)
-        page_info = parse_qs(parsed.query).get("page_info", [None])[0]
-        if not page_info:
-            break
-
+        next_url = next((part.split(";")[0].strip().strip("<>") for part in link_header.split(",") if 'rel="next"' in part), None)
+        if not next_url: break
+        page_info = parse_qs(urlparse(next_url).query).get("page_info", [None])[0]
+        if not page_info: break
         current_params = {"limit": 250, "page_info": page_info}
-
     return results
 
 
-# ===========================================================================
-# Shopify loaders
-# ===========================================================================
-
-def fetch_shopify_inventory() -> list[RawInventoryItem]:
-    """
-    1. Fetch all products to get SKU -> product_name mapping.
-    2. Fetch all locations to get location IDs.
-    3. Fetch inventory levels filtered by those location IDs.
-    4. Aggregate stock per SKU (sum across locations).
-    5. Skip untracked items (available is None).
-    """
-    # Step 1: products
-    products = _paginate_shopify(
-        "products.json",
-        "products",
-        {"limit": 250, "fields": "id,title,variants"},
-    )
-
-    sku_to_name: dict[str, str] = {}
-    variant_to_sku: dict[int, str] = {}
-
+def fetch_shopify_inventory(user_config: dict) -> list[RawInventoryItem]:
+    products = _paginate_shopify("products.json", "products", user_config, {"limit": 250, "fields": "id,title,variants"})
+    sku_to_name, variant_to_sku = {}, {}
     for p in products:
         for v in p.get("variants", []):
-            sku = v.get("sku") or ""
-            if not sku:
-                continue
-            sku_to_name[sku] = p.get("title", sku)
-            variant_to_sku[v["inventory_item_id"]] = sku
+            if v.get("sku"):
+                sku_to_name[v["sku"]] = p.get("title", v["sku"])
+                variant_to_sku[v["inventory_item_id"]] = v["sku"]
 
-    # Step 2: locations
-    locations = _paginate_shopify(
-        "locations.json",
-        "locations",
-        {"limit": 250},
-    )
+    locations = _paginate_shopify("locations.json", "locations", user_config, {"limit": 250})
     location_ids = [str(loc["id"]) for loc in locations]
+    if not location_ids: return []
 
-    if not location_ids:
-        return []
-
-    # Step 3: inventory levels
-    levels = _paginate_shopify(
-        "inventory_levels.json",
-        "inventory_levels",
-        {"limit": 250, "location_ids": ",".join(location_ids)},
-    )
-
-    # Step 4: aggregate per SKU
-    stock_by_sku: dict[str, int] = {}
-    updated_by_sku: dict[str, str] = {}
-
+    levels = _paginate_shopify("inventory_levels.json", "inventory_levels", user_config, {"limit": 250, "location_ids": ",".join(location_ids)})
+    
+    stock_by_sku = {}
     for level in levels:
-        item_id = level.get("inventory_item_id")
-        sku = variant_to_sku.get(item_id)
-        if not sku:
-            continue
+        sku = variant_to_sku.get(level.get("inventory_item_id"))
+        if sku and level.get("available") is not None:
+            stock_by_sku[sku] = stock_by_sku.get(sku, 0) + level["available"]
 
-        # Skip untracked items (available is None)
-        available = level.get("available")
-        if available is None:
-            continue
-
-        stock_by_sku[sku] = stock_by_sku.get(sku, 0) + available
-        if level.get("updated_at"):
-            updated_by_sku[sku] = level["updated_at"]
-
-    # Step 5: build final list (one entry per SKU)
-    items: list[RawInventoryItem] = []
-    for sku, total_stock in stock_by_sku.items():
-        items.append(
-            RawInventoryItem(
-                sku=sku,
-                product_name=sku_to_name.get(sku, sku),
-                current_stock=total_stock,
-                location_id=None,  # aggregated across all locations
-                updated_at=updated_by_sku.get(sku),
-            )
-        )
-    return items
+    return [RawInventoryItem(sku=s, product_name=sku_to_name.get(s, s), current_stock=stock, updated_at=None) for s, stock in stock_by_sku.items()]
 
 
-def fetch_shopify_orders(days: int = config.SALES_WINDOW_DAYS) -> list[RawOrderLine]:
-    """
-    Fetch orders from the last `days` days and flatten line_items into
-    individual RawOrderLine objects.
-    """
+def fetch_shopify_orders(user_config: dict, days: int = config.SALES_WINDOW_DAYS) -> list[RawOrderLine]:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-
-    orders = _paginate_shopify(
-        "orders.json",
-        "orders",
-        {
-            "limit": 250,
-            "status": "any",
-            "created_at_min": since,
-            "fields": "id,created_at,line_items",
-        },
-    )
-
-    lines: list[RawOrderLine] = []
-    for order in orders:
-        for item in order.get("line_items", []):
-            sku = item.get("sku") or ""
-            if not sku:
-                continue
-            lines.append(
-                RawOrderLine(
-                    order_id=str(order["id"]),
-                    created_at=order["created_at"],
-                    sku=sku,
-                    quantity=item.get("quantity", 0),
-                    price=float(item.get("price", 0.0)),
-                )
-            )
+    orders = _paginate_shopify("orders.json", "orders", user_config, {"limit": 250, "status": "any", "created_at_min": since, "fields": "id,created_at,line_items"})
+    
+    lines = []
+    for o in orders:
+        for item in o.get("line_items", []):
+            if item.get("sku"):
+                lines.append(RawOrderLine(order_id=str(o["id"]), created_at=o["created_at"], sku=item["sku"], quantity=item.get("quantity", 0), price=float(item.get("price", 0.0))))
     return lines
 
 
-# ===========================================================================
-# Dispatchers — the only functions the rest of the pipeline calls
-# ===========================================================================
-
-def get_inventory(source: str = "mock") -> list[RawInventoryItem]:
-    """Return inventory items from the requested source."""
-    if source == "mock":
-        return load_mock_inventory()
-    if source == "shopify":
-        return fetch_shopify_inventory()
+def get_inventory(source: str, user_config: dict) -> list[RawInventoryItem]:
+    if source == "mock": return load_mock_inventory()
+    if source == "shopify": return fetch_shopify_inventory(user_config)
     raise ValueError(f"Unknown source: {source}")
 
 
-def get_orders(
-    source: str = "mock",
-    days: int = config.SALES_WINDOW_DAYS,
-) -> list[RawOrderLine]:
-    """Return recent order lines from the requested source."""
-    if source == "mock":
-        return load_mock_orders()
-    if source == "shopify":
-        return fetch_shopify_orders(days=days)
+def get_orders(source: str, user_config: dict, days: int = config.SALES_WINDOW_DAYS) -> list[RawOrderLine]:
+    if source == "mock": return load_mock_orders()
+    if source == "shopify": return fetch_shopify_orders(user_config, days)
     raise ValueError(f"Unknown source: {source}")

@@ -1,11 +1,3 @@
-"""
-Orchestrator. Runs the full pipeline end-to-end.
-
-Usage:
-    python -m agent.main --source mock --dry-run
-    python -m agent.main --source shopify
-"""
-
 import argparse
 import logging
 import time
@@ -21,15 +13,11 @@ from agent.ingestion import get_inventory, get_orders
 from agent.notification import send_rich_alert
 from agent.state import load_state, record_alert, save_state, should_alert
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("agent.main")
 
-
-def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = False) -> dict:
-    """Run the entire pipeline. Returns a summary dict."""
+def run_pipeline(user_config: dict, source: str = "mock", dry_run: bool = False, force: bool = False) -> dict:
+    """Run the entire pipeline using the provided user_config."""
     started_at = time.time()
     logger.info("Starting pipeline | source=%s dry_run=%s force=%s", source, dry_run, force)
 
@@ -37,8 +25,8 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
     state = load_state()
 
     # 2. Fetch
-    inventory = get_inventory(source)
-    orders = get_orders(source)
+    inventory = get_inventory(source, user_config)
+    orders = get_orders(source, user_config)
     logger.info("Fetched %d inventory items, %d order lines", len(inventory), len(orders))
 
     # 3. Analyze
@@ -70,6 +58,7 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
             intro=f"{len(critical)} SKU(s) are critically low and need restocking now.",
             skus=critical,
             urgency="CRITICAL",
+            user_config=user_config,
             narrative=body,
             dry_run=dry_run,
         )
@@ -88,6 +77,7 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
             intro=f"{len(digest_items)} SKU(s) are trending low — keep an eye on them.",
             skus=digest_items,
             urgency="NORMAL",
+            user_config=user_config,
             narrative=body,
             dry_run=dry_run,
         )
@@ -122,35 +112,40 @@ def run_pipeline(source: str = "mock", dry_run: bool = False, force: bool = Fals
         duration_sec=duration,
         summary=summary,
         timestamp=ts,
+        user_config=user_config,
         dry_run=dry_run,
     )
 
     return summary
 
 
-def run_pipeline_safe(source: str = "mock", dry_run: bool = False, force: bool = False) -> dict | None:
-    """
-    Wrapper around run_pipeline() that catches exceptions, sends an error
-    alert, and re-raises so the process still exits with a non-zero code.
-    """
+def run_pipeline_safe(user_config: dict, source: str = "mock", dry_run: bool = False, force: bool = False):
+    """Wrapper that catches crashes and sends alerts."""
     try:
-        return run_pipeline(source=source, dry_run=dry_run, force=force)
+        return run_pipeline(user_config, source, dry_run, force)
     except Exception as e:
         logger.exception("Pipeline crashed")
-        send_error_alert(e)
+        send_error_alert(e, user_config)  # <-- Passes user_config now
         raise
 
 
-def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Inventory agent pipeline")
-    p.add_argument("--source", choices=["mock", "shopify"], default="mock")
-    p.add_argument("--dry-run", action="store_true",
-                   help="Do not send or persist; just print")
-    p.add_argument("--force", action="store_true",
-                   help="Ignore dedup window — alert everything alertable")
-    return p.parse_args()
-
-
 if __name__ == "__main__":
-    args = _parse_args()
-    run_pipeline_safe(source=args.source, dry_run=args.dry_run, force=args.force)
+    # For CLI usage, load from .env as a fallback user
+    fallback_config = {
+        "shopify_url": config.SHOPIFY_STORE_URL,
+        "shopify_client_id": config.SHOPIFY_CLIENT_ID,
+        "shopify_client_secret": config.SHOPIFY_CLIENT_SECRET,
+        "gmail_user": config.GMAIL_USER,
+        "gmail_app_password": config.GMAIL_APP_PASSWORD,
+        "owner_email": config.OWNER_EMAIL,
+        "discord_webhook_url": config.DISCORD_WEBHOOK_URL,
+        "discord_webhook_url_logs": config.DISCORD_WEBHOOK_URL_LOGS,
+    }
+    
+    p = argparse.ArgumentParser()
+    p.add_argument("--source", default="mock")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--force", action="store_true")
+    args = p.parse_args()
+    
+    run_pipeline_safe(fallback_config, source=args.source, dry_run=args.dry_run, force=args.force)

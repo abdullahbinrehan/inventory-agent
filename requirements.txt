@@ -13,3 +13,4 @@ langchain
 langchain-community
 langchain-huggingface
 sentence-transformers
+plotly==5.24.1

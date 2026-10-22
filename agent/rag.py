@@ -1,6 +1,6 @@
 """
 RAG (Retrieval-Augmented Generation) engine.
-Uses ChromaDB for vector storage and Groq for answering.
+Uses ChromaDB (in-memory) for vector storage and Groq for answering.
 """
 
 import os
@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 # Use a free, local embedding model
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-CHROMA_DIR = "data/chroma_db"
 
 def _load_documents() -> list[Document]:
     """Read current inventory and history to create context documents."""
@@ -52,31 +51,24 @@ def _load_documents() -> list[Document]:
             
     return docs
 
-def rebuild_vector_store() -> bool:
-    """Rebuilds the ChromaDB database from the latest files."""
+def rebuild_vector_store():
+    """Builds the ChromaDB database in memory and returns it."""
     docs = _load_documents()
     if not docs:
-        return False
+        return None
         
     embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
     
-    # Delete old DB and create new
-    if os.path.exists(CHROMA_DIR):
-        import shutil
-        shutil.rmtree(CHROMA_DIR)
-        
-    Chroma.from_documents(documents=docs, embedding=embeddings, persist_directory=CHROMA_DIR)
-    logger.info("Rebuilt ChromaDB with %d documents", len(docs))
-    return True
+    # Build in-memory ChromaDB (no disk writes = no Windows file locks)
+    vectorstore = Chroma.from_documents(documents=docs, embedding=embeddings)
+    logger.info("Built in-memory ChromaDB with %d documents", len(docs))
+    return vectorstore
 
-def ask_inventory(question: str) -> str:
+def ask_inventory(question: str, vectorstore) -> str:
     """Retrieve context and ask Groq to answer the question."""
-    if not os.path.exists(CHROMA_DIR) or not os.listdir(CHROMA_DIR):
-        return "No inventory data available yet. Please click 'Rebuild Vector Database' first."
+    if not vectorstore:
+        return "Please click 'Sync Knowledge Base' first to load your data."
 
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-    vectorstore = Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
-    
     # Find the 5 most relevant pieces of text
     retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
     docs = retriever.invoke(question)
@@ -85,6 +77,11 @@ def ask_inventory(question: str) -> str:
     
     prompt = f"""You are an expert inventory management assistant for an e-commerce store.
 Use ONLY the following context to answer the user's question. If the answer isn't in the context, say "I don't have enough data to answer that."
+
+IMPORTANT FORMATTING RULES:
+- DO NOT use markdown tables.
+- Present data using clean bullet points or short paragraphs.
+- Be concise and conversational.
 
 Context:
 {context}

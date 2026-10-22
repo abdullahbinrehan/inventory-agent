@@ -1,9 +1,10 @@
-name: Daily Inventory Check
+name: Global Daily Inventory Check
 
 on:
   schedule:
+    # Runs at 08:00 UTC every day
     - cron: '0 8 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch: {}   # Allows manual trigger
 
 permissions:
   contents: write
@@ -11,7 +12,7 @@ permissions:
 jobs:
   run-agent:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repo
@@ -26,51 +27,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore previous state
-        uses: actions/download-artifact@v4
-        with:
-          name: agent-state
-          path: data/
-        continue-on-error: true
-
-      - name: Run pipeline
+      - name: Run Global Pipeline for All Users
         env:
-          SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
-          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
-          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DISCORD_WEBHOOK_URL_LOGS: ${{ secrets.DISCORD_WEBHOOK_URL_LOGS }}
-        run: python -m agent.main --source mock --force
-
-      - name: Commit run history
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/run_history.csv
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "chore: update run history [skip ci]"
-            git push
-          fi
-
-      - name: Save state as artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: agent-state
-          path: data/state.json
-          if-no-files-found: ignore
-
-      - name: Notify on failure
-        if: failure()
-        env:
-          DISCORD_WEBHOOK_URL_LOGS: ${{ secrets.DISCORD_WEBHOOK_URL_LOGS }}
-        run: |
-          curl -X POST "$DISCORD_WEBHOOK_URL_LOGS" \
-            -H "Content-Type: application/json" \
-            -d "{\"content\":\"❌ Workflow run failed. Check logs: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}"
+        run: python -m scripts.run_all_users
